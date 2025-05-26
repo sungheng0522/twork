@@ -1,5 +1,7 @@
 import asyncio
+import os
 import json
+from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.types import Message
@@ -7,8 +9,18 @@ from aiogram.enums import ParseMode
 from aiogram.filters import Command
 from aiogram.filters import CommandObject
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiojobs.aiohttp import setup as setup_aiojobs, spawn
+from aiojobs.aiohttp import get_scheduler_from_app
 from news_db import NewsDatabase
-from news_config import DB_DSN, API_TOKEN
+
+from news_config import API_TOKEN, DB_DSN, AES_KEY, BOT_MODE, WEBHOOK_PATH, WEBHOOK_HOST
+
+import time
+
+
+from utils.aes_crypto import AESCrypto
+from utils.base62_converter import Base62Converter
 
 bot = Bot(
     token=API_TOKEN,
@@ -30,7 +42,7 @@ news_buffer = {
     "id": None
 }
 
-
+crypto = AESCrypto(AES_KEY)
 
 def parse_button_str(button_str: str) -> InlineKeyboardMarkup:
     """
@@ -60,8 +72,74 @@ def parse_button_str(button_str: str) -> InlineKeyboardMarkup:
 
 
 @dp.message(Command("start"))
-async def start_handler(message: Message):
-    await message.answer("🤖 哥哥您好，我是鲁仔")
+async def start_handler(message: Message, command: CommandObject):
+    args = command.args
+
+    if args and args.startswith("s_"):
+        encrypted = args[2:]
+
+        try:
+            decrypted = crypto.aes_decode(encrypted)
+            parts = decrypted.split(";")
+            if len(parts) != 3 :
+                raise ValueError("格式不正确")
+
+            business_type = {
+                "yz": "stone",
+                "sl": "salai"
+            }.get(parts[0], "unknown")
+            # 解析订阅链接
+
+
+            expire_ts = Base62Converter.base62_to_decimal(parts[1])
+            user_id = Base62Converter.base62_to_decimal(parts[2])
+            expire_ts = int(expire_ts) + 1735689600
+
+            if expire_ts < time.time():
+                await message.answer("⚠️ 此订阅链接已过期。")
+                return
+
+            await db.init()
+            await db.pool.execute("""
+                INSERT INTO news_user (user_id, business_type, expire_at)
+                VALUES ($1, $2, to_timestamp($3))
+                ON CONFLICT (user_id, business_type)
+                DO UPDATE SET expire_at = to_timestamp($3)
+            """, user_id, business_type, expire_ts)
+
+            
+####
+
+            # 立即找最新一则新闻（business_type = 'stone'）
+            latest_news = await db.pool.fetchrow("""
+                SELECT id FROM news_content
+                WHERE business_type = $1
+                ORDER BY id DESC
+                LIMIT 1
+            """,business_type)
+
+            if latest_news:
+                await db.pool.execute("""
+                    INSERT INTO news_send_queue (user_ref_id, news_id)
+                    SELECT id, $1 FROM news_user
+                    WHERE user_id = $2 AND business_type = $3
+                    ON CONFLICT DO NOTHING
+                """, latest_news["id"], user_id, business_type)
+
+
+            
+            await message.answer("✅ 你已成功订阅！\r\n📅 有效期至："
+                                f"{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(expire_ts))}。")
+
+###
+
+
+
+
+        except Exception as e:
+            await message.answer(f"⚠️ 链接解析失败：{str(e)}")
+    else:
+        await message.answer("🤖 哥哥您好，我是鲁仔")
 
 
 @dp.message(Command("show"))
@@ -127,11 +205,11 @@ async def receive_media(message: Message):
     try:
         result = json.loads(caption)
     except Exception:
-        await message.reply("⚠️ Caption 不是合法的 JSON。")
+        # await message.reply("⚠️ Caption 不是合法的 JSON。")
         return
 
     if not isinstance(result, dict) or "caption" not in result:
-        await message.reply("⚠️ JSON 缺少必要字段 caption。")
+        # await message.reply("⚠️ JSON 缺少必要字段 caption。")
         return
 
     if message.photo:
@@ -156,6 +234,7 @@ async def receive_media(message: Message):
         return
 
     # 统一写入 news_buffer
+    business_type = result.get("business_type", "news")
     news_buffer.update({
         "id": result.get("id"),
         "content_id": content_id,
@@ -182,9 +261,11 @@ async def receive_media(message: Message):
     if existing_news_id:
         await db.update_news_by_id(news_id=existing_news_id, **payload)
         await message.reply(f"🔁 已更新新闻 ID = {existing_news_id}")
+        await db.create_send_tasks(existing_news_id, business_type)
     else:
         news_id = await db.insert_news(title=news_buffer["title"] or "Untitled", **payload)
         await message.reply(f"✅ 已新增新闻并建立任务，新闻 ID = {news_id}")
+        await db.create_send_tasks(news_id, business_type)
 
 async def periodic_sender():
     from news_sender import send_news_batch
@@ -192,11 +273,50 @@ async def periodic_sender():
         await send_news_batch()
         await asyncio.sleep(10)
 
+async def on_startup(bot: Bot):
+    await bot.delete_webhook(drop_pending_updates=True)
+    await bot.set_webhook(f"{WEBHOOK_HOST}{WEBHOOK_PATH}")
+
+async def health(request):
+    return web.Response(text="✅ News bot 运行中")
+
+async def on_shutdown(app):
+    await bot.session.close()
+
+
 async def main():
     await db.init()
-    loop = asyncio.get_event_loop()
-    loop.create_task(periodic_sender())
-    await dp.start_polling(bot)
+    if BOT_MODE == "webhook":
+        dp.startup.register(on_startup)
+        app = web.Application()
+        app.router.add_get("/", health)
+
+        # ✅ 初始化 aiojobs（必须在 on_startup 注册前调用）
+        setup_aiojobs(app)
+
+        # ✅ 设置 aiogram webhook
+        SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
+        setup_application(app, dp, bot=bot)
+
+        # ✅ 用 spawn(app, coro) 启动任务
+        async def on_app_start(app):
+            await get_scheduler_from_app(app).spawn(periodic_sender())
+
+        app.on_startup.append(on_app_start)
+        app.on_shutdown.append(on_shutdown)
+
+        port = int(os.environ.get("PORT", 8080))
+        await web._run_app(app, host="0.0.0.0", port=port)
+    else:
+        loop = asyncio.get_event_loop()
+        loop.create_task(periodic_sender())
+        await dp.start_polling(
+            bot,
+            skip_updates=True,
+            timeout=60,
+            relax=3.0
+        )
+
 
 if __name__ == "__main__":
     asyncio.run(main())
