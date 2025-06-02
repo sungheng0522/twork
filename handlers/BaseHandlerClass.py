@@ -10,6 +10,9 @@ from telethon.errors import ChannelPrivateError
 import json
 
 class BaseHandlerClass:
+
+    _fallback_chat_ids_cache = None
+
     def __init__(self, client, entity, message, extra_data):
         self.client = client
         self.entity = entity
@@ -17,7 +20,7 @@ class BaseHandlerClass:
         self.extra_data = extra_data
         self.forward_pattern = re.compile(r'\|_forward_\|\@(-?\d+|[a-zA-Z0-9_]+)')
         self.is_duplicate_allowed = False
-        self._fallback_chat_ids_cache = None  # ✅ 实例缓存
+        
 
 
     def parse_caption_json(self,caption: str):
@@ -54,7 +57,10 @@ class BaseHandlerClass:
                 
                         match = self.forward_pattern.search(caption)
                         if match:
-                           
+                             
+                            if caption.endswith("|force"):
+                                self.is_duplicate_allowed = True
+
                             target_raw = match.group(1)
                             if target_raw.isdigit():
                                 target_chat_id = int(target_raw)
@@ -97,6 +103,9 @@ class BaseHandlerClass:
                     if json_result is False:
                         match = self.forward_pattern.search(caption)
                         if match:
+                            if caption.endswith("|force"):
+                                self.is_duplicate_allowed = True
+                        
                             target_raw = match.group(1)
                             if target_raw.isdigit():
                                 target_chat_id = int(target_raw)
@@ -201,8 +210,12 @@ class BaseHandlerClass:
             return False
 
     async def get_fallback_chat_ids(self):
-        if self._fallback_chat_ids_cache is not None:
-            return self._fallback_chat_ids_cache
+
+        if BaseHandlerClass._fallback_chat_ids_cache is not None:
+            return BaseHandlerClass._fallback_chat_ids_cache
+
+        # if self._fallback_chat_ids_cache is not None:
+        #     return self._fallback_chat_ids_cache
 
         try:
             setting_chat_id = self.extra_data.get('config', {}).get('setting_chat_id')
@@ -221,7 +234,7 @@ class BaseHandlerClass:
             valid_ids = []
             for chat_id in original_ids:
                 if await self.is_still_in_group_by_id(chat_id):
-                    print(f"✅ 仍在群 {chat_id}")
+                    # print(f"  ✅ 仍在群 {chat_id}")
                     valid_ids.append(chat_id)
                 else:
                     
@@ -255,8 +268,10 @@ class BaseHandlerClass:
                 record.save()
                 print(f"📝 已更新 ScrapConfig，当前有效群: {new_value}")
 
-            self._fallback_chat_ids_cache = valid_ids  # ✅ 缓存有效的 ID
-           
+            # self._fallback_chat_ids_cache = valid_ids  # ✅ 缓存有效的 ID
+            BaseHandlerClass._fallback_chat_ids_cache = valid_ids
+            print(f"✅ FORWARD_TARGETS 有效群：{BaseHandlerClass._fallback_chat_ids_cache}")
+          
             return valid_ids
 
         except DoesNotExist:
@@ -269,7 +284,7 @@ class BaseHandlerClass:
     async def safe_delete_message(self):
         try:
             
-            print(f"🧹 成功刪除訊息D {self.message.id}（雙方）", flush=True)
+            print(f"---🧹 成功刪除訊息D {self.message.id}（雙方）", flush=True)
             await self.client.delete_messages(self.message.chat_id, [self.message.id], revoke=True)
         except Exception as e:
-            print(f"⚠️ 刪除訊息失敗D {self.message.id}：{e}", flush=True)
+            print(f"---⚠️ 刪除訊息失敗D {self.message.id}：{e}", flush=True)

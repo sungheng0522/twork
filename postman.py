@@ -8,7 +8,7 @@ import os
 # 加载环境变量
 if not os.getenv('GITHUB_ACTIONS'):
     from dotenv import load_dotenv
-    load_dotenv(dotenv_path='.20100034.env')
+    load_dotenv(dotenv_path='.28817994.env')
 
 
 import random
@@ -24,11 +24,11 @@ from model.scrap_progress import ScrapProgress
 from model.scrap_config import ScrapConfig
 from database import db
 
-
-
 from handlers.HandlerBJIClass import HandlerBJIClass
 from handlers.HandlerBJILiteClass import HandlerBJILiteClass
 from handlers.HandlerNoAction import HandlerNoAction
+from handlers.HandlerNoDelete import HandlernNoDeleteClass
+
 from handlers.HandlerRelayClass import HandlerRelayClass
 
 from handlers.HandlerPrivateMessageClass import HandlerPrivateMessageClass
@@ -41,11 +41,6 @@ from telethon.tl.functions.account import UpdateProfileRequest
 from telethon.tl.functions.account import UpdateUsernameRequest
 from telethon.tl.functions.channels import InviteToChannelRequest, TogglePreHistoryHiddenRequest,LeaveChannelRequest
 from telethon.errors import ChannelPrivateError
-
-
-
-
-
 
 # 配置参数
 config = {
@@ -72,12 +67,6 @@ except Exception as e:
         
 # print(f"⚠️ 配置參數：{config}")
    
-
-    
-    
-
-
-
 # 在模块顶部初始化全局缓存
 local_scrap_progress = {}  # key = (chat_id, api_id), value = message_id
 
@@ -103,7 +92,7 @@ async def join(invite_hash):
         if 'InviteRequestSentError' in str(e):
             print("加入请求已发送，等待审批")
         else:
-            print(f"加入群组失败: {e}")
+            print(f"失败-加入群组: {invite_hash} {e}")
 
 async def leave_group(entity):
     try:
@@ -152,7 +141,6 @@ async def update_username(client,username):
     except Exception as e:
         print(f"变更失败：{e}")
 
-
 async def invite_bot(bot_username, entity):
 # 获取 Bot 实体
     bot_entity = await client.get_entity(bot_username)
@@ -175,8 +163,6 @@ async def invite_bot(bot_username, entity):
 
     except Exception as e:
         print(f'邀请失败: {e}')
-
-
 
 async def safe_delete_message(message):
     try:
@@ -233,7 +219,6 @@ async def is_blacklisted(entity_id):
         print(f"⚠️ 加载黑名单失败: {e}")
         return False
 
-
 async def get_max_source_message_id(source_chat_id):
     key = (source_chat_id, config['api_id'])
     if key in local_scrap_progress:
@@ -261,9 +246,6 @@ async def get_max_source_message_id(source_chat_id):
     except Exception as e:
         print(f"Error fetching max source_message_id: {e}")
         return None
-
-
-
         
 async def save_scrap_progress(entity_id, message_id):
     key = (entity_id, config['api_id'])
@@ -300,6 +282,7 @@ async def process_user_message(entity, message):
                 botname = match.group(1) + match.group(2)
                 await client.send_message(botname, "/start")
                 await client.send_message(botname, "[~bot~]")
+                await safe_delete_message(message)
                 return
         except Exception as e:
                 print(f"Error kicking bot: {e} {botname}", flush=True)
@@ -329,6 +312,7 @@ async def process_user_message(entity, message):
                 inviteurl = match2.group(1) 
                 print(f"邀请链接: {inviteurl}")
                 await join(inviteurl)    #Coniguration
+                await safe_delete_message(message)
                 return
         except Exception as e:
                 print(f"Error livite: {e} {inviteurl}", flush=True)
@@ -351,6 +335,7 @@ async def process_user_message(entity, message):
     # 实现：根据 entity.id 映射到不同处理类
     class_map = {
         777000: HandlerNoAction,   # 替换为真实 entity.id 和处理类
+        7521097665 : HandlernNoDeleteClass,   # 撸仔四号
     }
 
     handler_class = class_map.get(entity.id)
@@ -365,8 +350,6 @@ async def process_user_message(entity, message):
         handler.delete_after_process = True
         await handler.handle()
        
-       
-
 async def process_group_message(entity, message):
     
     extra_data = {'app_id': config['api_id']}
@@ -375,6 +358,8 @@ async def process_group_message(entity, message):
     # 检测是否是 |_init_|
     if message.text == '|_init_|':
         await invite_bot('luzai01bot', entity)  # 替换为实际的 Bot 用户名
+        await invite_bot('luzai01man', entity)  # 替换为实际的 Bot 用户名
+        await invite_bot('luzai03bot', entity)  # 替换为实际的 Bot 用户名
         await invite_bot('has_no_access_bot', entity)  # 替换为实际的 Bot 用户名
         await invite_bot('DeletedAcconutBot', entity)  # 替换为实际的 Bot 用户名
         await invite_bot('freebsd66bot', entity)  # 替换为实际的 Bot 用户名
@@ -412,8 +397,6 @@ async def process_group_message(entity, message):
     else:
         pass
 
-
-
 async def man_bot_loop():
     last_message_id = 0  # 提前定义，避免 UnboundLocalError
     async for dialog in client.iter_dialogs():
@@ -427,6 +410,7 @@ async def man_bot_loop():
             # print(f"🚫 已屏蔽 entity: {entity.id}，跳过处理")
             continue
 
+        current_entiry_title = None
         entity_title = getattr(entity, 'title', None)
         if not entity_title:
             first_name = getattr(entity, 'first_name', '') or ''
@@ -435,7 +419,7 @@ async def man_bot_loop():
 
 
 
-        print(f"当前对话: {entity_title} ({entity.id})", flush=True)
+        # print(f"当前对话: {entity_title} ({entity.id})", flush=True)
 
         if dialog.unread_count >= 0:
             if dialog.is_user:
@@ -453,7 +437,10 @@ async def man_bot_loop():
                     entity, min_id=min_id, limit=100, reverse=True, filter=InputMessagesFilterEmpty()
                 ):
                     current_message = message
-                    
+                    if current_entiry_title != entity_title:
+                        print(f"User: {current_message.id} 来自: {entity_title} ({entity.id})", flush=True)
+                        current_entiry_title = entity_title
+
                     await process_user_message(entity, message)
 
                 if current_message:
@@ -477,6 +464,11 @@ async def man_bot_loop():
                         if message.sticker:
                             continue
                         current_message = message
+                        if current_entiry_title != entity_title:
+                            print(f"Group: {current_message.id} 来自: {entity_title} ({entity.id})", flush=True)
+                            current_entiry_title = entity_title
+
+
                         # print(f"当前消息ID(G): {current_message.id}")
                         await process_group_message(entity, message)
                 except ChannelPrivateError as e:
@@ -494,18 +486,22 @@ async def man_bot_loop():
                     return last_message_id
     return last_message_id
 
-
-
 async def main():
     await client.start(config['phone_number'])
     await keep_db_alive()
 
     me = await client.get_me()
-    print(f'你的用户名: {me.username}')
-    print(f'你的ID: {me.id}')
-    print(f'你的名字: {me.first_name} {me.last_name or ""}')
-    print(f'是否是Bot: {me.bot}')
 
+       
+    if config.get('is_debug_enabled') == 1:
+        print(f'你的用户名: {me.username}')
+        print(f'你的ID: {me.id}')
+        print(f'你的名字: {me.first_name} {me.last_name or ""}')
+        print(f'是否是Bot: {me.bot}')
+
+    intbotname = '@Qing001bot'
+    await client.send_message(intbotname, "/start")
+    await client.send_message(intbotname, "[~bot~]")
 
     # group_identifier = -1002592636499
     # participants = await client.get_participants(group_identifier)
@@ -520,31 +516,41 @@ async def main():
 
     # exit()
     # await delete_my_profile_photos(client)
-    # await update_username(client,"gunndd8kdhdj")
-    # exit()
-
-    # await join("Dya4zqIBXtIxMWZk") #6874-01 2017145941    - 22329346  / 20100034
-    # await join("fTMvarjGSckxZmI8") #7258-02 2091886937 ok
-    # await join("aLUZCCIiKhM5ZWNk") #7275-03 2063167161    -22329346   / 20100034
-    # await join("cr_hRjB_dRtkODdk") #7287-04 2108982395 - 20100034
-    # await join("AeW96FZ9pmZTdk") #6376-05 1997235289  - 22329346  / 20100034
-    # await join("li2wwjC6vEc5Mzdk") #6659-06   2000730581 - 22329346   / 20100034
-    # await join("YfssBV1GmsgzMWQ0")  #7350-07 2145325974 / 20100034
-    # await join("AWkBJsoFUc81MWE1")  #5891-08 2062860209 / 20100034
-    # await join("_nPFKXIaMns1OTQ0")  #7338-09 2015918658 / 20100034
-    # await join("3eDZvSPvkVgyNmY0")  #06315-10 2047726819 v ok shunfeng807
-    # await join("3eDZvSPvkVgyNmY0")  #06393-11 2003243227 v   @shunfeng807
-    # await join("JP4ToOui4FcyMzM0")  #6463-12   1843229948
-    # await join("PsKjngKmHXtlNTM0")  #7246-13   2021739085 v
-
+    # await update_my_name(client,'Luzai', 'Man')
+    # await update_username(client,"luzai01man")
     # await join("fRCAnbinkG1hYjU0")  #封面备份群   2086579883  #setting: thumb, func: handle_bid(update_thumb_info_by_send_photo), get_thumb
     # await join("6gAolpGeQq8wYmM0")  #封面图中转站 2054963513  Relay #setting: photo_relay , func: process_update_sora_thumb_info,push_notification_action
 
+    
 
+    #01 DIE 6874    2017145941  await join("") 22329346  / 20100034 ( Die )
+    #02 OK  7258    2091886937  await join("fTMvarjGSckxZmI8") 
+    #03 DIE 7275    2063167161  await join("")                 22329346   / 20100034 ( Die ? )
+    #04 DIE 7287    2108982395  await join("cr_hRjB_dRtkODdk") 20100034 (Die)
+    #05 DIE 6376    1997235289  await join("")                 20100034 ( Die ? )
+    #06 OK  6659    2000730581  await join("li2wwjC6vEc5Mzdk") 22329346   / 20100034
+    #07 DIE 7350    2145325974  await join("")                 20100034
+    #08 DIE 5891    2062860209  await join("")                 20100034 (?)
+    #09 DIE 7338    2015918658  await join("")                 20100034
+    #10 OK  06315   2047726819  await join("QQCyh1N2sMU5ZGQ0") shunfeng807
+    #11 OK  06393   2003243227  await join("3eDZvSPvkVgyNmY0") @shunfeng807
+    #12 OK  #6463   1843229948  await join("MyiRfuLls-U0Zjk0") 
+    #13 DIE 7246    2021739085  await join("")
+    #14 DIE 6234                await join("")
+    #15 OK  6553    2061165152  await join("xCcAV1mgMCs1ZDE8")
+
+
+    # 2091886937,2000730581,2047726819,2003243227,1843229948,2061165152
+    # |_join_|fTMvarjGSckxZmI8
+    # |_join_|li2wwjC6vEc5Mzdk
+    # |_join_|QQCyh1N2sMU5ZGQ0
     # |_join_|3eDZvSPvkVgyNmY0
+    # |_join_|MyiRfuLls-U0Zjk0
+    # |_join_|xCcAV1mgMCs1ZDE8
+
 
     
-    
+   
     
   
   

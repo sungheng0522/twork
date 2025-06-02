@@ -10,7 +10,7 @@ from utils.send_safe import wait_for_send_slot
 from telethon.errors import ChannelPrivateError
 from handlers.BaseHandlerClass import BaseHandlerClass
 
-class HandlerPrivateMessageClass(BaseHandlerClass):
+class HandlernNoDeleteClass(BaseHandlerClass):
     def __init__(self, client, entity, message, extra_data):
         self.client = client
         self.entity = entity
@@ -18,13 +18,6 @@ class HandlerPrivateMessageClass(BaseHandlerClass):
         self.extra_data = extra_data
         self.delete_after_process = False
         self.forward_pattern = re.compile(r'\|_forward_\|\@(-?\d+|[a-zA-Z0-9_]+)')
-        # self.forward_pattern = re.compile(
-        #     r'^'
-        #     r'\|_forward_\|'              # 开头固定前缀
-        #     r'(@?-?\d+|[A-Za-z0-9_]+)'     # 【捕获组1】：用户名或 ID（可选 @、可带负号数字，或字母数字下划线组合）
-        #     r'(?:\|force)?'               # 【可选】如果后面有 "|force" 就匹配它，但不捕获
-        #     r'$'
-        # )
         self._fallback_chat_ids_cache = None  # ✅ 实例缓存
         self.is_duplicate_allowed = False  # 默认值
 
@@ -72,38 +65,19 @@ class HandlerPrivateMessageClass(BaseHandlerClass):
                     caption
                 )
 
-                if(self.delete_after_process and forwared_success):
-                    await self.safe_delete_message()
-
+               
             else:
                 caption = self.message.text or ""
                 match = self.forward_pattern.search(caption)
                 back_target_chat_id = None
-                print(f"开始处理 {self.message.id} - {caption}")    
                 if match:
                     if caption.endswith("|force"):
                         self.is_duplicate_allowed = True
-                    print(f"---处理转发标记: {caption}")
                     # target_raw = match.group(1)
                     target_raw = match.group(1)
                     target_raw = target_raw.replace('-100','')
-
-                    # # 判断是否以 "|force" 结尾
-                    # has_force = caption.endswith("|force")
                     
-                    # # 处理包含 '|' 的情况
                    
-                    # if has_force:
-                    #     # print(f"---处理包含 '|' 的转发标记: {caption}")
-                    #     parts = caption.split('|')
-                    #     # print(f"---分割后的部分: {parts}")
-                    #     target_raw = parts[2].strip()
-                    #     if len(parts) > 1 and parts[3].strip().lower() == 'force':
-                    #         # print(f"---强制转发标记: {caption}")
-                    #         self.is_duplicate_allowed = True
-                    # else:
-                    #     target_raw = target_raw_orignal.strip()
-
 
 
                     if target_raw.isdigit():
@@ -115,14 +89,13 @@ class HandlerPrivateMessageClass(BaseHandlerClass):
                         back_target_chat_id = random.choice(fallback_chat_ids)    
                     else:
                         back_target_chat_id = None
-                    
-                    print(f"---指定转发 x chat_id={target_chat_id}")
+                    print(f"📌 指定转发 x chat_id={target_chat_id}")
 
                 elif fallback_chat_ids:
                     target_chat_id = random.choice(fallback_chat_ids)
                     # print(f"🌟 無轉發標記，改转发至 chat_id={target_chat_id}", flush=True)
                 else:
-                    print("---⚠️ 無 chat_id 可用，跳过消息", flush=True)
+                    print("⚠️ 無 chat_id 可用，跳过消息", flush=True)
                     return
 
                 media = self.message.media.document if isinstance(self.message.media, MessageMediaDocument) else self.message.media.photo
@@ -138,11 +111,15 @@ class HandlerPrivateMessageClass(BaseHandlerClass):
                             (MediaIndex.media_id == media_id) &
                             (MediaIndex.access_hash == access_hash)
                         ).exists()
-
+ 
                     if not exists:
+                        if self.message.chat_id == target_chat_id or target_chat_id == "luzai04bot":
+                            # await self.safe_delete_message()
+                            
+                            print("⚠️ 目标和源聊天相同，跳过转发")
+                            return
                         
                         await wait_for_send_slot(target_chat_id)
-                       
                         forwared_success = await safe_forward_or_send(
                             self.client,
                             self.message.id,
@@ -151,9 +128,6 @@ class HandlerPrivateMessageClass(BaseHandlerClass):
                             media,
                             caption
                         )
-
-                        
-
 
                         if not forwared_success and back_target_chat_id != None:
                             await wait_for_send_slot(back_target_chat_id)
@@ -167,24 +141,19 @@ class HandlerPrivateMessageClass(BaseHandlerClass):
                                 caption
                             )
 
-
-                        if forwared_success and not self.is_duplicate_allowed:
+                        if not self.is_duplicate_allowed and  forwared_success:
                             MediaIndex.create(
-                            media_type=media_type,
-                            media_id=media_id,
-                            access_hash=access_hash
-                        )
+                                media_type=media_type,
+                                media_id=media_id,
+                                access_hash=access_hash
+                            )
 
                     else:
-                        print("---⚠️ 已接收过该媒体，跳过处理")
+                        print("⚠️ 已接收过该媒体，跳过处理")
                         pass
 
-                    if(self.delete_after_process and forwared_success):
-                        await self.safe_delete_message()
+                  
 
-        elif self.message.text and self.message.text != '[~bot~]':
-            await self.safe_delete_message()
-        else:
-            await self.safe_delete_message()
+
 
 

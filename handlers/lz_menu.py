@@ -81,7 +81,16 @@ async def handle_search_by_id(message: Message, command: Command = Command("id")
     args = message.text.split(maxsplit=1)
     if len(args) > 1:
         # ✅ 调用并解包返回的三个值
-        ret_content, [file_id, thumb_file_id], [owner_user_id] = await load_sora_content_by_id(int(args[1]))
+        # ret_content, [file_id, thumb_file_id], [owner_user_id] = await load_sora_content_by_id(int(args[1]))
+
+        result = await load_sora_content_by_id(int(args[1]))
+        print("Returned:", result)
+
+        ret_content, file_info, user_info = result
+        file_id = file_info[0] if len(file_info) > 0 else None
+        thumb_file_id = file_info[1] if len(file_info) > 1 else None
+        owner_user_id = user_info[0] if user_info else None
+
 
         # ✅ 检查是否找不到资源（根据返回第一个值）
         if ret_content.startswith("⚠️"):
@@ -93,6 +102,7 @@ async def handle_search_by_id(message: Message, command: Command = Command("id")
             photo=thumb_file_id,
             caption=ret_content,
             parse_mode="HTML"
+            
         )
 
 # == 启动指令 ==
@@ -124,7 +134,17 @@ async def handle_start(message: Message, command: Command = Command("start")):
                 await message.answer_photo(
                     photo=thumb_file_id,
                     caption=ret_content,
-                    parse_mode="HTML"
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [
+                            InlineKeyboardButton(text="⬅️", callback_data="sora_prev"),
+                            InlineKeyboardButton(text="🎁 兑换", callback_data=f"sora_redeem:{file_id}"),
+                            InlineKeyboardButton(text="➡️", callback_data="sora_next"),
+                        ],
+                        [
+                            InlineKeyboardButton(text="🏠 回主目录", callback_data="go_home"),
+                        ]
+                    ])
                 )
 
               
@@ -217,16 +237,29 @@ async def handle_do_upload_resource(callback: CallbackQuery):
 async def handle_go_home(callback: CallbackQuery):
     await callback.message.edit_reply_markup(reply_markup=main_menu_keyboard())
 
+@router.callback_query(F.data == "sora_prev")
+async def handle_prev(callback: CallbackQuery):
+    await callback.answer("👈 上一页功能开发中...")
+
+@router.callback_query(F.data == "sora_next")
+async def handle_next(callback: CallbackQuery):
+    await callback.answer("👉 下一页功能开发中...")
+
+@router.callback_query(F.data.startswith("sora_redeem:"))
+async def handle_redeem(callback: CallbackQuery):
+    file_id = callback.data.split(":")[1]
+    await callback.answer(f"🎁 你尝试兑换资源：{file_id}")
+
 
 
 # 📌 功能函数：根据 sora_content id 载入资源
 async def load_sora_content_by_id(content_id: int) -> str:
     record = await db.search_sora_content_by_id(content_id)
     if record:
-        print(f"{record}")
+        
          # 取出字段，并做基本安全处理
         record_id = record.get('id', '')
-        tag = record.get('tagtag', '')
+        tag = record.get('tag', '')
         file_size = record.get('file_size', '')
         duration = record.get('duration', '')
         source_id = record.get('source_id', '')
@@ -235,7 +268,9 @@ async def load_sora_content_by_id(content_id: int) -> str:
         file_id = record.get('file_id', '')
         thumb_file_id = record.get('thumb_file_id', '')
 
-        print(f"🔍 载入 ID: {record_id}, Source ID: {source_id}, File Type: {file_type}")
+        print(f"{record}")
+
+        print(f"🔍 载入 ID: {record_id}, Source ID: {source_id}, thumb_file_id:{thumb_file_id}, File Type: {file_type}\r\n")
 
         # ✅ 若 thumb_file_id 为空，则给默认值
         if not thumb_file_id:
@@ -289,7 +324,7 @@ async def load_sora_content_by_id(content_id: int) -> str:
         available_content_length = max_total_length - tag_length - 50  # 预留额外描述字符
         
        
-        print(f"🔍 {available_content_length}")
+        print(f"长度 {available_content_length}")
 
 
         # 裁切内容
