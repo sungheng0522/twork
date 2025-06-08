@@ -24,7 +24,7 @@ from telethon.errors import UserIdInvalidError
 
 class HandlerBJIClass:
     SHELLBOT_USER_ID = 7294369541
-    FILEDEPOT_FORWARD_CHAT_ID = 2118273441
+    FILEDEPOT_FORWARD_CHAT_ID = 2132486952
     PROTECT_FILEDEPOT_FORWARD_CHAT_ID = 2094471421
     SHELLBOT_FORWARD_CHAT_ID = 2008008502
     BOT_TITLE_MAP = {
@@ -137,6 +137,36 @@ class HandlerBJIClass:
                         "收下啦～",
                         "感谢老板",
                         "蟹蟹 😎"
+                        # 新增
+                        "老板大气！",
+                        "这波稳了，谢谢！",
+                        "老板人真好 🫶",
+                        "又被照顾了",
+                        "承蒙厚爱 🙇",
+                        "感激不尽！",
+                        "这就去膜拜 🙏",
+                        "鞠躬！",
+                        "记在心里了",
+                        "老板好人一生平安",
+                       
+                        "大恩不言谢",
+                        "老板走过，寸草不生",
+                        "收下了，感激涕零",
+                        "哇呜！谢谢！",
+                        "温暖的一笔！",
+                        "我哭死，居然真的发了",
+                        "泪目...谢谢...",
+                        "老板雨露均沾啊",
+                        "这波我吹爆",
+                        "人间值得就是你",
+                        "德不孤必有邻！",
+                        "又是被爱的感觉",
+                        "哇靠谢谢！",
+                        "阿里嘎多～",
+                        "Thx thx！",
+                        "🙌 膜拜大佬"
+                        
+                       
                     ]
 
                     # 随机选择感谢语
@@ -152,7 +182,7 @@ class HandlerBJIClass:
                             (ScrapProgress.chat_id == self.entity.id) &
                             (ScrapProgress.api_id == api_id)
                         ).order_by(ScrapProgress.post_datetime.desc()).get()
-                        progress.post_datetime = datetime.now()
+                       
                         progress.save()
                     
                         asyncio.create_task(self.delayed_delete(sent_hb_message.id, 180))

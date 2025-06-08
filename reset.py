@@ -1,13 +1,17 @@
 import asyncio
 from telethon import TelegramClient
+from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError, AuthKeyDuplicatedError, RPCError
 import os
 
 # Check if running in a local development environment
 if not os.getenv('GITHUB_ACTIONS'):
     from dotenv import load_dotenv
-    load_dotenv(dotenv_path='.28817994.env')
+    load_dotenv(dotenv_path='.29614663.gunnar.env')
     
+
+
+
 api_id = os.getenv('API_ID')
 api_hash = os.getenv('API_HASH')
 phone_number = os.getenv('PHONE_NUMBER')
@@ -112,11 +116,22 @@ async def main():
     if not await client.is_user_authorized():
         print("User is not authorized, starting the login process...", flush=True)
         await login()
+
+        stringsession = StringSession.save(client.session)
+        print("\n✅ 以下是你的 StringSession（可写入 .env）\n")
+        print("USER_SESSION_STRING=" + stringsession)
+
     else:
         print("User is already authorized, no need to log in again", flush=True)
 
     print(f"\n\nopenssl aes-256-cbc -pbkdf2 -salt -in {session_file} -out {session_file}.enc -pass pass:{session_password}\n\n")
     await encrypt_session_file(session_file, session_file+".enc", session_password)
+
+
+
+
+
+
 
 
 # Explicitly control client startup process instead of using `with client:`
